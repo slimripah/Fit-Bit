@@ -9,76 +9,17 @@
     android:gravity="center"
     tools:context=".MainActivity">
 
-    <TextView
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="steps" />
-
-    <TextView
-        android:id="@+id/steps"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="" />
-
-    <TextView
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="distance" />
-
-    <TextView
-        android:id="@+id/distance"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="" />
-
-    <TextView
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="move minutes" />
-
-    <TextView
-        android:id="@+id/move_minutes"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="" />
-
-    <TextView
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="walking speed" />
-
-    <TextView
-        android:id="@+id/walking_speed"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="" />
-
-    <TextView
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="calories burned" />
-
-    <TextView
-        android:id="@+id/calories_burned"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="" />
-
-    <TextView
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="heart rate" />
-
-    <TextView
-        android:id="@+id/heart_rate"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="" />
-
     <Button
         android:id="@+id/btn_request_permissions"
         android:layout_width="100dp"
         android:layout_height="wrap_content"
         android:text="retry" />
+
+    <Button
+        android:id="@+id/btn_open_display"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Open Display"
+        android:visibility="gone"/>
 
 </LinearLayout>

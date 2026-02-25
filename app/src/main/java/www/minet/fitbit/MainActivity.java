@@ -5,6 +5,7 @@ import android.content.SharedPreferences;
 import android.net.Uri;
 import android.os.Bundle;
 import android.util.Log;
+import android.view.View;
 import android.widget.Button;
 import android.widget.TextView;
 
@@ -28,12 +29,8 @@ import retrofit2.converter.gson.GsonConverterFactory;
 
 public class MainActivity extends AppCompatActivity {
 
-    Button btn;
-
-    // SharedPreferences for storing access token
-    private SharedPreferences prefs;
-    private static final String PREFS_NAME = "fitbit_prefs";
-    private static final String KEY_ACCESS_TOKEN = "access_token";
+    Button btnLogin;
+    private Button btnOpenDisplay;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -47,12 +44,23 @@ public class MainActivity extends AppCompatActivity {
             return insets;
         });
 
-        btn = findViewById(R.id.btn_request_permissions);
+        btnLogin = findViewById(R.id.btn_request_permissions);
+        btnOpenDisplay = findViewById(R.id.btn_open_display);
 
-        // initialize SharedPreferences
-        prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
+        TokenManager tokenManager = new TokenManager(this);
 
-        btn.setOnClickListener(v -> {
+        // if already logged in hide login
+        if (tokenManager.getAccessToken() != null) {
+            btnLogin.setVisibility(View.GONE);
+            btnOpenDisplay.setVisibility(View.VISIBLE);
+        } else {
+            btnLogin.setVisibility(View.VISIBLE);
+            btnOpenDisplay.setVisibility(View.GONE);
+        }
+
+        // login button
+        btnLogin.setOnClickListener(v -> {
+
             String CLIENT_ID = "23V33B";
             String REDIRECT_URI = "myapp://callback";
 
@@ -64,40 +72,12 @@ public class MainActivity extends AppCompatActivity {
                     .appendQueryParameter("scope", "activity heartrate profile")
                     .build();
 
-            Intent intent = new Intent(Intent.ACTION_VIEW, authUri);
-            startActivity(intent);
+            startActivity(new Intent(Intent.ACTION_VIEW, authUri));
         });
 
-        // Check saved token on app start
-        SharedPreferences prefs = getSharedPreferences("fitbit_prefs", MODE_PRIVATE);
-
-        String savedAccessToken = prefs.getString("access_token", null);
-        long expiryTime = prefs.getLong("expiry_time", 0);
-
-        if (savedAccessToken != null) {
-
-            if (System.currentTimeMillis() >= expiryTime) {
-                // Token expired → refresh it
-                refreshAccessToken();
-            } else {
-                // Token still valid
-                fetchFitbitData(savedAccessToken);
-            }
-        }
-
-        // use TokenManager to auto-login
-        TokenManager tokenManager = new TokenManager(this);
-
-        tokenManager.getValidAccessToken(new TokenManager.TokenCallback() {
-            @Override
-            public void onTokenReady(String accessToken) {
-                fetchFitbitData(accessToken);
-            }
-
-            @Override
-            public void onFailure() {
-                // No token saved — user must login manually
-            }
+        // open display button
+        btnOpenDisplay.setOnClickListener(v -> {
+            startActivity(new Intent(MainActivity.this, Display.class));
         });
 
     }
@@ -111,8 +91,6 @@ public class MainActivity extends AppCompatActivity {
         if (uri != null && uri.getQueryParameter("code") != null) {
 
             String authCode = uri.getQueryParameter("code");
-            Log.d("OAUTH", "Authorization Code: " + authCode);
-
             exchangeCodeForToken(authCode);
         }
     }
@@ -152,17 +130,17 @@ public class MainActivity extends AppCompatActivity {
 
                     TokenResponse token = response.body();
 
+                    // Use TokenManager to save tokens
                     TokenManager tokenManager = new TokenManager(MainActivity.this);
-
-                    // use TokenManager to save tokens
                     tokenManager.saveTokens(
                             token.accessToken,
                             token.refreshToken,
                             token.expiresIn
                     );
 
-                    // fetch data
-                    fetchFitbitData(token.accessToken);
+                    // Update UI
+                    btnLogin.setVisibility(View.GONE);
+                    btnOpenDisplay.setVisibility(View.VISIBLE);
 
                 } else {
                     Log.e("OAUTH", "Token exchange failed: " + response.code());
@@ -172,210 +150,6 @@ public class MainActivity extends AppCompatActivity {
             @Override
             public void onFailure(Call<TokenResponse> call, Throwable t) {
                 Log.e("OAUTH", "Token request failed", t);
-            }
-        });
-    }
-
-    private void fetchFitbitData(String accessToken) {
-
-        Retrofit retrofit = new Retrofit.Builder()
-                .baseUrl("https://api.fitbit.com/")
-                .addConverterFactory(GsonConverterFactory.create())
-                .build();
-
-        FitbitApi api = retrofit.create(FitbitApi.class);
-
-        String authHeader = "Bearer " + accessToken;
-
-        // date
-        Calendar calendar = Calendar.getInstance();
-        String todayDate = new SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
-                .format(calendar.getTime());
-
-        // ===== DAILY ACTIVITY =====
-        api.getDailyActivity(authHeader, todayDate).enqueue(new Callback<DailyActivityResponse>() {
-            @Override
-            public void onResponse(Call<DailyActivityResponse> call,
-                                   Response<DailyActivityResponse> response) {
-
-                // Handle expired access token
-                if (response.code() == 401) {
-
-                    TokenManager tokenManager = new TokenManager(MainActivity.this);
-
-                    tokenManager.refreshAccessToken(new TokenManager.TokenCallback() {
-                        @Override
-                        public void onTokenReady(String newAccessToken) {
-                            fetchFitbitData(newAccessToken);
-                        }
-
-                        @Override
-                        public void onFailure() {
-                            // Optional: force re-login
-                        }
-                    });
-
-                    return;
-                }
-
-                Log.d("FITBIT", "HTTP Code: " + response.code());
-                Log.d("FITBIT", "Response body: " + new Gson().toJson(response.body()));
-
-                if (response.isSuccessful() && response.body() != null) {
-
-                    Log.d("FITBIT", "Parsed JSON: " +
-                            new com.google.gson.Gson().toJson(response.body()));
-
-                    DailyActivityResponse data = response.body();
-
-                    int steps = data.summary.steps;
-                    int calories = data.summary.caloriesOut;
-                    int moveMinutes = data.summary.veryActiveMinutes;
-
-                    double distance = 0;
-
-                    if (data.summary.distances != null) {
-                        for (DailyActivityResponse.Distance d : data.summary.distances) {
-                            if ("total".equals(d.activity)) {
-                                distance = d.distance;
-                                break;
-                            }
-                        }
-                    }
-
-                    double walkingSpeed;
-                    if (moveMinutes > 0) {
-                        walkingSpeed = distance / (moveMinutes / 60.0);
-                    } else {
-                        walkingSpeed = 0;
-                    }
-
-                    // ===== UPDATE UI =====
-                    double finalDistance = distance;
-                    runOnUiThread(() -> {
-                        ((TextView) findViewById(R.id.steps))
-                                .setText(String.valueOf(steps));
-
-                        ((TextView) findViewById(R.id.distance))
-                                .setText(finalDistance + " km");
-
-                        ((TextView) findViewById(R.id.move_minutes))
-                                .setText(String.valueOf(moveMinutes));
-
-                        ((TextView) findViewById(R.id.calories_burned))
-                                .setText(String.valueOf(calories));
-
-                        ((TextView) findViewById(R.id.walking_speed))
-                                .setText(String.format("%.2f km/h", walkingSpeed));
-                    });
-                }
-            }
-
-            @Override
-            public void onFailure(Call<DailyActivityResponse> call, Throwable t) {
-                t.printStackTrace();
-            }
-        });
-
-        // ===== HEART RATE =====
-        api.getHeartRate(authHeader).enqueue(new Callback<HeartRateResponse>() {
-            @Override
-            public void onResponse(Call<HeartRateResponse> call,
-                                   Response<HeartRateResponse> response) {
-
-                // Handle expired access token
-                if (response.code() == 401) {
-
-                    TokenManager tokenManager = new TokenManager(MainActivity.this);
-
-                    tokenManager.refreshAccessToken(new TokenManager.TokenCallback() {
-                        @Override
-                        public void onTokenReady(String newAccessToken) {
-                            fetchFitbitData(newAccessToken);
-                        }
-
-                        @Override
-                        public void onFailure() {
-                            // Optional: force re-login
-                        }
-                    });
-
-                    return;
-                }
-
-                if (response.isSuccessful() && response.body() != null) {
-
-                    int heartRate = response.body()
-                            .activitiesHeart.get(0)
-                            .value.restingHeartRate;
-
-                    runOnUiThread(() -> {
-                        ((TextView) findViewById(R.id.heart_rate))
-                                .setText(String.valueOf(heartRate) + " bpm");
-                    });
-                }
-            }
-
-            @Override
-            public void onFailure(Call<HeartRateResponse> call, Throwable t) {
-                t.printStackTrace();
-            }
-        });
-    }
-
-    private void refreshAccessToken() {
-
-        SharedPreferences prefs = getSharedPreferences("fitbit_prefs", MODE_PRIVATE);
-        String refreshToken = prefs.getString("refresh_token", null);
-
-        if (refreshToken == null) return;
-
-        String CLIENT_ID = "23V33B";
-        String CLIENT_SECRET = "9790ce8db15fbc40d19a5c7b62551902";
-
-        String credentials = CLIENT_ID + ":" + CLIENT_SECRET;
-        String basicAuth = "Basic " + android.util.Base64.encodeToString(
-                credentials.getBytes(),
-                android.util.Base64.NO_WRAP
-        );
-
-        Retrofit retrofit = new Retrofit.Builder()
-                .baseUrl("https://api.fitbit.com/")
-                .addConverterFactory(GsonConverterFactory.create())
-                .build();
-
-        FitbitApi api = retrofit.create(FitbitApi.class);
-
-        api.refreshToken(
-                basicAuth,
-                "refresh_token",
-                refreshToken
-        ).enqueue(new Callback<TokenResponse>() {
-
-            @Override
-            public void onResponse(Call<TokenResponse> call,
-                                   Response<TokenResponse> response) {
-
-                if (response.isSuccessful() && response.body() != null) {
-
-                    TokenResponse token = response.body();
-
-                    // save new refreshed tokens
-                    prefs.edit()
-                            .putString("access_token", token.accessToken)
-                            .putString("refresh_token", token.refreshToken)
-                            .putLong("expiry_time",
-                                    System.currentTimeMillis()
-                                            + (token.expiresIn * 1000L))
-                            .apply();
-
-                    fetchFitbitData(token.accessToken);
-                }
-            }
-
-            @Override
-            public void onFailure(Call<TokenResponse> call, Throwable t) {
-                Log.e("TOKEN", "Refresh failed", t);
             }
         });
     }
