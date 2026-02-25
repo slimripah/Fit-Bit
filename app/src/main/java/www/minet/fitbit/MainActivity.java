@@ -52,13 +52,6 @@ public class MainActivity extends AppCompatActivity {
         // initialize SharedPreferences
         prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
 
-        // Check if token exists, fetch data automatically
-        String savedToken = prefs.getString(KEY_ACCESS_TOKEN, null);
-        if (savedToken != null) {
-            fetchFitbitData(savedToken);
-        }
-
-
         btn.setOnClickListener(v -> {
             String CLIENT_ID = "23V33B";
             String REDIRECT_URI = "myapp://callback";
@@ -91,6 +84,21 @@ public class MainActivity extends AppCompatActivity {
                 fetchFitbitData(savedAccessToken);
             }
         }
+
+        // use TokenManager to auto-login
+        TokenManager tokenManager = new TokenManager(this);
+
+        tokenManager.getValidAccessToken(new TokenManager.TokenCallback() {
+            @Override
+            public void onTokenReady(String accessToken) {
+                fetchFitbitData(accessToken);
+            }
+
+            @Override
+            public void onFailure() {
+                // No token saved — user must login manually
+            }
+        });
 
     }
 
@@ -144,21 +152,17 @@ public class MainActivity extends AppCompatActivity {
 
                     TokenResponse token = response.body();
 
-                    String accessToken = token.accessToken;
-                    String refreshToken = token.refreshToken;
-                    int expiresIn = token.expiresIn;
+                    TokenManager tokenManager = new TokenManager(MainActivity.this);
 
-                    // save tokens persistently
-                    getSharedPreferences("fitbit_prefs", MODE_PRIVATE)
-                            .edit()
-                            .putString("access_token", accessToken)
-                            .putString("refresh_token", refreshToken)
-                            .putLong("expiry_time",
-                                    System.currentTimeMillis() + (expiresIn * 1000L))
-                            .apply();
+                    // use TokenManager to save tokens
+                    tokenManager.saveTokens(
+                            token.accessToken,
+                            token.refreshToken,
+                            token.expiresIn
+                    );
 
                     // fetch data
-                    fetchFitbitData(accessToken);
+                    fetchFitbitData(token.accessToken);
 
                 } else {
                     Log.e("OAUTH", "Token exchange failed: " + response.code());
@@ -196,7 +200,21 @@ public class MainActivity extends AppCompatActivity {
 
                 // Handle expired access token
                 if (response.code() == 401) {
-                    refreshAccessToken();
+
+                    TokenManager tokenManager = new TokenManager(MainActivity.this);
+
+                    tokenManager.refreshAccessToken(new TokenManager.TokenCallback() {
+                        @Override
+                        public void onTokenReady(String newAccessToken) {
+                            fetchFitbitData(newAccessToken);
+                        }
+
+                        @Override
+                        public void onFailure() {
+                            // Optional: force re-login
+                        }
+                    });
+
                     return;
                 }
 
@@ -267,7 +285,21 @@ public class MainActivity extends AppCompatActivity {
 
                 // Handle expired access token
                 if (response.code() == 401) {
-                    refreshAccessToken();
+
+                    TokenManager tokenManager = new TokenManager(MainActivity.this);
+
+                    tokenManager.refreshAccessToken(new TokenManager.TokenCallback() {
+                        @Override
+                        public void onTokenReady(String newAccessToken) {
+                            fetchFitbitData(newAccessToken);
+                        }
+
+                        @Override
+                        public void onFailure() {
+                            // Optional: force re-login
+                        }
+                    });
+
                     return;
                 }
 
