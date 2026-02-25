@@ -1,6 +1,7 @@
 package www.minet.fitbit;
 
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.net.Uri;
 import android.os.Bundle;
 import android.util.Log;
@@ -29,6 +30,11 @@ public class MainActivity extends AppCompatActivity {
 
     Button btn;
 
+    // SharedPreferences for storing access token
+    private SharedPreferences prefs;
+    private static final String PREFS_NAME = "fitbit_prefs";
+    private static final String KEY_ACCESS_TOKEN = "access_token";
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -42,6 +48,16 @@ public class MainActivity extends AppCompatActivity {
         });
 
         btn = findViewById(R.id.btn_request_permissions);
+
+        // initialize SharedPreferences
+        prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
+
+        // Check if token exists, fetch data automatically
+        String savedToken = prefs.getString(KEY_ACCESS_TOKEN, null);
+        if (savedToken != null) {
+            fetchFitbitData(savedToken);
+        }
+
 
         btn.setOnClickListener(v -> {
             String CLIENT_ID = "23V33B";
@@ -110,6 +126,7 @@ public class MainActivity extends AppCompatActivity {
                 if (response.isSuccessful() && response.body() != null) {
 
                     String accessToken = response.body().accessToken;
+                    prefs.edit().putString(KEY_ACCESS_TOKEN, accessToken).apply();
                     fetchFitbitData(accessToken);
 
                 } else {
@@ -135,7 +152,7 @@ public class MainActivity extends AppCompatActivity {
 
         String authHeader = "Bearer " + accessToken;
 
-        // <<< ADD THIS HERE >>>
+        // date
         Calendar calendar = Calendar.getInstance();
         String todayDate = new SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
                 .format(calendar.getTime());
