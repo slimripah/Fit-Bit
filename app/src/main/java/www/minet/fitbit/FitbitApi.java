@@ -19,6 +19,14 @@ public interface FitbitApi {
             @Field("code") String code
     );
 
+    @FormUrlEncoded
+    @POST("oauth2/token")
+    Call<TokenResponse> refreshToken(
+            @Header("Authorization") String authHeader,
+            @Field("grant_type") String grantType,
+            @Field("refresh_token") String refreshToken
+    );
+
     @GET("1/user/-/activities/date/{date}.json")
     Call<DailyActivityResponse> getDailyActivity(
             @Header("Authorization") String authHeader,

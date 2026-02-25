@@ -75,6 +75,23 @@ public class MainActivity extends AppCompatActivity {
             startActivity(intent);
         });
 
+        // Check saved token on app start
+        SharedPreferences prefs = getSharedPreferences("fitbit_prefs", MODE_PRIVATE);
+
+        String savedAccessToken = prefs.getString("access_token", null);
+        long expiryTime = prefs.getLong("expiry_time", 0);
+
+        if (savedAccessToken != null) {
+
+            if (System.currentTimeMillis() >= expiryTime) {
+                // Token expired → refresh it
+                refreshAccessToken();
+            } else {
+                // Token still valid
+                fetchFitbitData(savedAccessToken);
+            }
+        }
+
     }
 
     @Override
@@ -125,8 +142,22 @@ public class MainActivity extends AppCompatActivity {
 
                 if (response.isSuccessful() && response.body() != null) {
 
-                    String accessToken = response.body().accessToken;
-                    prefs.edit().putString(KEY_ACCESS_TOKEN, accessToken).apply();
+                    TokenResponse token = response.body();
+
+                    String accessToken = token.accessToken;
+                    String refreshToken = token.refreshToken;
+                    int expiresIn = token.expiresIn;
+
+                    // save tokens persistently
+                    getSharedPreferences("fitbit_prefs", MODE_PRIVATE)
+                            .edit()
+                            .putString("access_token", accessToken)
+                            .putString("refresh_token", refreshToken)
+                            .putLong("expiry_time",
+                                    System.currentTimeMillis() + (expiresIn * 1000L))
+                            .apply();
+
+                    // fetch data
                     fetchFitbitData(accessToken);
 
                 } else {
@@ -162,6 +193,12 @@ public class MainActivity extends AppCompatActivity {
             @Override
             public void onResponse(Call<DailyActivityResponse> call,
                                    Response<DailyActivityResponse> response) {
+
+                // Handle expired access token
+                if (response.code() == 401) {
+                    refreshAccessToken();
+                    return;
+                }
 
                 Log.d("FITBIT", "HTTP Code: " + response.code());
                 Log.d("FITBIT", "Response body: " + new Gson().toJson(response.body()));
@@ -228,6 +265,12 @@ public class MainActivity extends AppCompatActivity {
             public void onResponse(Call<HeartRateResponse> call,
                                    Response<HeartRateResponse> response) {
 
+                // Handle expired access token
+                if (response.code() == 401) {
+                    refreshAccessToken();
+                    return;
+                }
+
                 if (response.isSuccessful() && response.body() != null) {
 
                     int heartRate = response.body()
@@ -244,6 +287,63 @@ public class MainActivity extends AppCompatActivity {
             @Override
             public void onFailure(Call<HeartRateResponse> call, Throwable t) {
                 t.printStackTrace();
+            }
+        });
+    }
+
+    private void refreshAccessToken() {
+
+        SharedPreferences prefs = getSharedPreferences("fitbit_prefs", MODE_PRIVATE);
+        String refreshToken = prefs.getString("refresh_token", null);
+
+        if (refreshToken == null) return;
+
+        String CLIENT_ID = "23V33B";
+        String CLIENT_SECRET = "9790ce8db15fbc40d19a5c7b62551902";
+
+        String credentials = CLIENT_ID + ":" + CLIENT_SECRET;
+        String basicAuth = "Basic " + android.util.Base64.encodeToString(
+                credentials.getBytes(),
+                android.util.Base64.NO_WRAP
+        );
+
+        Retrofit retrofit = new Retrofit.Builder()
+                .baseUrl("https://api.fitbit.com/")
+                .addConverterFactory(GsonConverterFactory.create())
+                .build();
+
+        FitbitApi api = retrofit.create(FitbitApi.class);
+
+        api.refreshToken(
+                basicAuth,
+                "refresh_token",
+                refreshToken
+        ).enqueue(new Callback<TokenResponse>() {
+
+            @Override
+            public void onResponse(Call<TokenResponse> call,
+                                   Response<TokenResponse> response) {
+
+                if (response.isSuccessful() && response.body() != null) {
+
+                    TokenResponse token = response.body();
+
+                    // save new refreshed tokens
+                    prefs.edit()
+                            .putString("access_token", token.accessToken)
+                            .putString("refresh_token", token.refreshToken)
+                            .putLong("expiry_time",
+                                    System.currentTimeMillis()
+                                            + (token.expiresIn * 1000L))
+                            .apply();
+
+                    fetchFitbitData(token.accessToken);
+                }
+            }
+
+            @Override
+            public void onFailure(Call<TokenResponse> call, Throwable t) {
+                Log.e("TOKEN", "Refresh failed", t);
             }
         });
     }
